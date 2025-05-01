@@ -58,6 +58,18 @@ int dequeue(FilaDeProcessos *fila);
 
 // Funções de sistema
 void inicializa_sistema(Sistema *sistema);
+
 void imprimir_estado(const Sistema *sistema); // usado pelo processo impressão
+
+// Função para carregar um programa de um arquivo
+int carregar_programa(const char *nome_arquivo, char ***programa, int *tamanho);
+
+// Função para criar o processo init
+void criar_processo_inicial(Sistema *sistema, const char *nome_arquivo);
+
+// Executa uma instrução do processo em execução
+void executar_proxima_instrucao(Sistema *sistema);
+
+
 
 #endif

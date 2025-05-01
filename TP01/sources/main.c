@@ -39,7 +39,8 @@ int main(int argc, char *argv[]) {
         close(pipe_fd[0]); // fecha leitura
 
         int escolha;
-        printf("Escolha modo de entrada:\n1 - Interativo\n2 - Arquivo\n> ");
+        usleep(10000);
+        printf("\nEscolha modo de entrada:\n1 - Interativo\n2 - Arquivo\n> ");
         scanf("%d", &escolha);
         getchar(); // consome \n
 
@@ -66,7 +67,12 @@ void modo_interativo(int write_fd) {
     char buffer[TAM_BUFFER];
 
     while (1) {
-        printf("Digite um comando (U, I, M): ");
+        // Espera um pouco para garantir que as mensagens do gerenciador foram exibidas
+        usleep(10000); // 10ms de delay
+        
+        printf("\nDigite um comando (U, I, M): ");
+        fflush(stdout); // Garante que o prompt é exibido
+        
         fgets(buffer, TAM_BUFFER, stdin);
 
         write(write_fd, buffer, strlen(buffer));
