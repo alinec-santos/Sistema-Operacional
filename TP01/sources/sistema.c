@@ -185,6 +185,52 @@ void executar_proxima_instrucao(Sistema *sistema) {
                 sistema->cpu.processo_id = -1;
                 return;
             // Futuramente: F, B, R
+
+            case 'N': {
+                // Extrai o nome do programa a partir da string original
+                char nome_programa[128];
+                if (sscanf(instrucao, "N %s", nome_programa) != 1) {
+                    printf("\n[G] Instrução N inválida: %s\n", instrucao);
+                    break;
+                }
+            
+                // Monta o caminho do arquivo
+                char caminho[256];
+                snprintf(caminho, sizeof(caminho), "programas/%s.txt", nome_programa);
+            
+                // Verifica se ainda há espaço na tabela de processos
+                if (sistema->total_processos >= MAX_PROCESSOS) {
+                    printf("\n[G] Limite de processos atingido.\n");
+                    break;
+                }
+            
+                int novo_pid = sistema->total_processos;
+                ProcessoSimulado *novo_proc = &sistema->tabela[novo_pid];
+            
+                novo_proc->id = novo_pid;
+                novo_proc->id_pai = pid;
+                novo_proc->estado = PRONTO;
+                novo_proc->pc = 0;
+                novo_proc->prioridade = proc->prioridade; // ou prioridade fixa, ex: 1
+                novo_proc->tempo_inicio = sistema->tempo;
+                novo_proc->tempo_cpu = 0;
+            
+                if (!carregar_programa(caminho, &novo_proc->programa, &novo_proc->tamanho_memoria)) {
+                    printf("\n[G] Falha ao carregar o programa %s\n", caminho);
+                    break;
+                }
+            
+                novo_proc->memoria = calloc(100, sizeof(int));
+            
+                // Adiciona à fila de pronto com a prioridade do novo processo
+                enqueue(&sistema->estado_pronto[novo_proc->prioridade], novo_pid);
+            
+                sistema->total_processos++;
+            
+                printf("\n[G] Processo P%d criado a partir de %s (filho de P%d)\n", novo_pid, nome_programa, pid);
+                break;
+            }
+            
         }
 
         // Avança PC e tempo de CPU
