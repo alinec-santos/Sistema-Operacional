@@ -16,6 +16,7 @@ void gerenciador() {
         comando[strcspn(comando, "\n")] = 0;
 
         if (strcmp(comando, "U") == 0) {
+            sistema.tempo ++;
             executar_proxima_instrucao(&sistema);
             printf("\n[G] Tempo avançado para %d\n", sistema.tempo);
         } else if (strcmp(comando, "I") == 0) {

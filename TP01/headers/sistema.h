@@ -23,6 +23,7 @@ typedef struct {
     Estado estado;
     int tempo_inicio;
     int tempo_cpu;
+    int tempo_bloqueio;
 } ProcessoSimulado;
 
 typedef struct {
@@ -70,6 +71,6 @@ void criar_processo_inicial(Sistema *sistema, const char *nome_arquivo);
 // Executa uma instrução do processo em execução
 void executar_proxima_instrucao(Sistema *sistema);
 
-
+void escalonar_proximo_processo(Sistema *sistema) ;
 
 #endif
