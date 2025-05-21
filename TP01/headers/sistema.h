@@ -49,7 +49,10 @@ typedef struct {
     int total_processos;
     FilaDeProcessos estado_pronto[MAX_PRIORIDADE]; // uma fila para cada prioridade
     FilaDeProcessos estado_bloqueado;
+    FilaDeProcessos fila_round_robin;
 } Sistema;
+
+
 
 // Funções de fila
 void inicializa_fila(FilaDeProcessos *fila);

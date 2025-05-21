@@ -1,19 +1,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>  // fork, pipe, read, write
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include "gerenciador.h" // Importando o arquivo do gerenciador
+#include "gerenciador.h"
 
-#define TAM_BUFFER 128
 
-void modo_interativo(int write_fd);
-void modo_arquivo(int write_fd, const char *arquivo);
+int tipo_escalonamento = 0; // 0 - Prioridade, 1 - Round Robin
 
 int main(int argc, char *argv[]) {
     int pipe_fd[2];
-    
+
+    // Escolha do algoritmo de escalonamento
+    printf("\n> Escolha o algoritmo de escalonamento\n< 1-Prioridade 2-Round Robin >: ");
+    int escolha_algo;
+    scanf("%d", &escolha_algo);
+    getchar(); // consome \n
+    if (escolha_algo == 2)
+        tipo_escalonamento = 1;
+    else
+        tipo_escalonamento = 0;
+
     if (pipe(pipe_fd) == -1) {
         perror("Erro ao criar pipe");
         exit(EXIT_FAILURE);
@@ -32,7 +40,7 @@ int main(int argc, char *argv[]) {
         close(pipe_fd[0]);
 
         // Chama a função do gerenciador diretamente
-        gerenciador(); // Agora chamamos a função gerenciador diretamente
+        gerenciador();
         exit(EXIT_FAILURE);
     } else {
         // Processo controle
@@ -64,19 +72,12 @@ int main(int argc, char *argv[]) {
 }
 
 void modo_interativo(int write_fd) {
-    char buffer[TAM_BUFFER];
-
+    char buffer[128];
     while (1) {
-        // Espera um pouco para garantir que as mensagens do gerenciador foram exibidas
-        usleep(100000); // 10ms de delay
-        
         printf("\n> Digite um comando (U, I, M): ");
-        fflush(stdout); // Garante que o prompt é exibido
-        
-        fgets(buffer, TAM_BUFFER, stdin);
-
+        fflush(stdout);
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) break;
         write(write_fd, buffer, strlen(buffer));
-
         if (buffer[0] == 'M') break;
     }
 }
@@ -87,12 +88,10 @@ void modo_arquivo(int write_fd, const char *arquivo) {
         perror("Erro ao abrir arquivo");
         return;
     }
-
-    char linha[TAM_BUFFER];
-    while (fgets(linha, TAM_BUFFER, fp)) {
+    char linha[128];
+    while (fgets(linha, sizeof(linha), fp)) {
         write(write_fd, linha, strlen(linha));
         if (linha[0] == 'M') break;
     }
-
     fclose(fp);
 }

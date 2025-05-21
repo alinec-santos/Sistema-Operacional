@@ -4,8 +4,11 @@
 #include <ctype.h>
 #include "sistema.h"
 
-// Função para escalonar próximo processo
+// Variável global para tipo de escalonamento
+extern int tipo_escalonamento;
+
 void escalonar_proximo_processo(Sistema *sistema);
+void escalonar_round_robin(Sistema *sistema);
 
 void inicializa_fila(FilaDeProcessos *fila) {
     fila->inicio = 0;
@@ -36,10 +39,38 @@ void inicializa_sistema(Sistema *sistema) {
     sistema->cpu.processo_id = -1;
     sistema->cpu.prioridade = 0;
 
+    inicializa_fila(&sistema->fila_round_robin);
+
     for (int i = 0; i < MAX_PRIORIDADE; i++)
         inicializa_fila(&sistema->estado_pronto[i]);
 
     inicializa_fila(&sistema->estado_bloqueado);
+}
+
+void criar_processo_inicial(Sistema *sistema, const char *nome_arquivo) {
+    ProcessoSimulado *p = &sistema->tabela[0];
+    p->id = 0;
+    p->id_pai = -1;
+    p->estado = PRONTO;
+    p->pc = 0;
+    p->prioridade = 0;
+    p->tempo_inicio = sistema->tempo;
+    p->tempo_cpu = 0;
+
+    if (!carregar_programa(nome_arquivo, &p->programa, &p->tamanho_memoria)) {
+        fprintf(stderr, "Erro ao carregar o programa inicial.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    p->memoria = calloc(100, sizeof(int));
+
+    enqueue(&sistema->estado_pronto[0], 0);
+    enqueue(&sistema->fila_round_robin, p->id);
+
+    sistema->total_processos = 1;
+
+    printf("\n[G] Processo init (P0) criado com sucesso.\n");
+    fflush(stdout);
 }
 
 const char* estado_str(Estado estado) {
@@ -87,8 +118,8 @@ int carregar_programa(const char *nome_arquivo, char ***programa, int *tamanho) 
     int count = 0;
 
     while (fgets(linha, sizeof(linha), arquivo) && count < MAX_INSTRUCOES) {
-        linha[strcspn(linha, "\n")] = 0; // Remove \n
-        (*programa)[count] = strdup(linha); // Copia a linha
+        linha[strcspn(linha, "\n")] = 0;
+        (*programa)[count] = strdup(linha);
         count++;
     }
 
@@ -97,34 +128,6 @@ int carregar_programa(const char *nome_arquivo, char ***programa, int *tamanho) 
     return 1;
 }
 
-void criar_processo_inicial(Sistema *sistema, const char *nome_arquivo) {
-    ProcessoSimulado *p = &sistema->tabela[0];
-    p->id = 0;
-    p->id_pai = -1;
-    p->estado = PRONTO;
-    p->pc = 0;
-    p->prioridade = 0;
-    p->tempo_inicio = sistema->tempo;
-    p->tempo_cpu = 0;
-
-    if (!carregar_programa(nome_arquivo, &p->programa, &p->tamanho_memoria)) {
-        fprintf(stderr, "Erro ao carregar o programa inicial.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    // Inicializa memória (ex: 100 posições com zero)
-    p->memoria = calloc(100, sizeof(int));
-
-    // Adiciona à fila de prioridade 0 (mais alta)
-    enqueue(&sistema->estado_pronto[0], 0);
-
-    sistema->total_processos = 1;
-
-    printf("\n[G] Processo init (P0) criado com sucesso.\n");
-    fflush(stdout);
-}
-
-// Implementação da função escalonar_proximo_processo
 void escalonar_proximo_processo(Sistema *sistema) {
     for (int i = 0; i < MAX_PRIORIDADE; i++) {
         if (!esta_vazia(&sistema->estado_pronto[i])) {
@@ -147,38 +150,68 @@ void escalonar_proximo_processo(Sistema *sistema) {
         }
     }
 
-    sistema->cpu.processo_id = -1;  // Nenhum processo disponível
+    sistema->cpu.processo_id = -1;
+}
+
+void escalonar_round_robin(Sistema *sistema) {
+    int tentativas = 0;
+    int total = sistema->total_processos;
+    while (!esta_vazia(&sistema->fila_round_robin) && tentativas < total) {
+        int pid = dequeue(&sistema->fila_round_robin);
+        ProcessoSimulado *p = &sistema->tabela[pid];
+
+        if (p->estado == TERMINADO) {
+            tentativas++;
+            continue;
+        }
+
+        sistema->cpu.processo_id = p->id;
+        sistema->cpu.programa = p->programa;
+        sistema->cpu.pc = p->pc;
+        sistema->cpu.memoria = p->memoria;
+        sistema->cpu.tamanho_memoria = 100;
+        sistema->cpu.quantum_usado = 0;
+        sistema->cpu.prioridade = p->prioridade;
+
+        p->estado = EXECUTANDO;
+        printf("\n[G] (RR) Processo P%d escalonado para execução\n", pid);
+        return;
+    }
+    sistema->cpu.processo_id = -1;
 }
 
 void executar_proxima_instrucao(Sistema *sistema) {
-    // Verifica processos bloqueados que devem ser desbloqueados
     FilaDeProcessos temp_fila;
     inicializa_fila(&temp_fila);
-    
+
     while (!esta_vazia(&sistema->estado_bloqueado)) {
         int pid = dequeue(&sistema->estado_bloqueado);
         ProcessoSimulado *p = &sistema->tabela[pid];
-        
+
         if (p->tempo_bloqueio <= sistema->tempo) {
             p->estado = PRONTO;
-            enqueue(&sistema->estado_pronto[p->prioridade], pid);
+            if (tipo_escalonamento == 1)
+                enqueue(&sistema->fila_round_robin, pid);
+            else
+                enqueue(&sistema->estado_pronto[p->prioridade], pid);
             printf("\n[G] Processo P%d desbloqueado (tempo %d)\n", pid, sistema->tempo);
         } else {
             enqueue(&temp_fila, pid);
         }
     }
-    
-    // Restaura a fila de bloqueados
+
     while (!esta_vazia(&temp_fila)) {
         enqueue(&sistema->estado_bloqueado, dequeue(&temp_fila));
     }
 
     // Escalona novo processo se necessário
     if (sistema->cpu.processo_id == -1) {
-        escalonar_proximo_processo(sistema);
+        if (tipo_escalonamento == 1)
+            escalonar_round_robin(sistema);
+        else
+            escalonar_proximo_processo(sistema);
     }
 
-    // Verifica se há processo para executar
     int pid = sistema->cpu.processo_id;
     if (pid == -1) {
         printf("\n[G] Nenhum processo disponível para execução.\n");
@@ -192,7 +225,6 @@ void executar_proxima_instrucao(Sistema *sistema) {
         return;
     }
 
-    // Executa a próxima instrução
     char *instrucao = proc->programa[sistema->cpu.pc];
     printf("\n[G] Executando instrução: %s (P%d)\n", instrucao, pid);
 
@@ -219,39 +251,44 @@ void executar_proxima_instrucao(Sistema *sistema) {
                     proc->estado = BLOQUEADO;
                     proc->tempo_bloqueio = sistema->tempo + tempo_bloqueio;
                     enqueue(&sistema->estado_bloqueado, pid);
-                    proc->pc++; 
+                    proc->pc++;
                     sistema->cpu.processo_id = -1;
-                    escalonar_proximo_processo(sistema);
+                    if (tipo_escalonamento == 1)
+                        escalonar_round_robin(sistema);
+                    else
+                        escalonar_proximo_processo(sistema);
                     return;
                 }
                 break;
             }
             case 'T': {
                 printf("\n[G] Processo P%d terminado.\n", pid);
-                
-                // Libera recursos
+
                 for (int i = 0; i < proc->tamanho_memoria; i++) {
                     free(proc->programa[i]);
                 }
                 free(proc->programa);
                 free(proc->memoria);
-                
-                // Atualiza estado
+
                 proc->estado = TERMINADO;
                 sistema->cpu.processo_id = -1;
-                
-                // Retorna para o pai se existir
+
                 if (proc->id_pai != -1) {
                     ProcessoSimulado *pai = &sistema->tabela[proc->id_pai];
                     if (pai->estado != TERMINADO && pai->estado != EXECUTANDO) {
                         pai->estado = PRONTO;
-                        enqueue(&sistema->estado_pronto[pai->prioridade], proc->id_pai);
+                        if (tipo_escalonamento == 1)
+                            enqueue(&sistema->fila_round_robin, proc->id_pai);
+                        else
+                            enqueue(&sistema->estado_pronto[pai->prioridade], proc->id_pai);
                         printf("\n[G] Processo pai P%d movido para fila de prontos\n", proc->id_pai);
                     }
                 }
-                
-                // Escalona próximo processo
-                escalonar_proximo_processo(sistema);
+
+                if (tipo_escalonamento == 1)
+                    escalonar_round_robin(sistema);
+                else
+                    escalonar_proximo_processo(sistema);
                 return;
             }
             case 'N': {
@@ -259,15 +296,15 @@ void executar_proxima_instrucao(Sistema *sistema) {
                 if (sscanf(instrucao, "N %s", nome_programa) == 1) {
                     char caminho[256];
                     snprintf(caminho, sizeof(caminho), "programas/%s.txt", nome_programa);
-                    
+
                     if (sistema->total_processos >= MAX_PROCESSOS) {
                         printf("\n[G] Limite de processos atingido.\n");
                         break;
                     }
-                    
+
                     int novo_pid = sistema->total_processos;
                     ProcessoSimulado *novo = &sistema->tabela[novo_pid];
-                    
+
                     novo->id = novo_pid;
                     novo->id_pai = pid;
                     novo->estado = PRONTO;
@@ -276,16 +313,19 @@ void executar_proxima_instrucao(Sistema *sistema) {
                     novo->tempo_inicio = sistema->tempo;
                     novo->tempo_cpu = 0;
                     novo->tempo_bloqueio = 0;
-                    
+
                     if (!carregar_programa(caminho, &novo->programa, &novo->tamanho_memoria)) {
                         printf("\n[G] Falha ao carregar o programa %s\n", caminho);
                         break;
                     }
-                    
+
                     novo->memoria = calloc(100, sizeof(int));
-                    enqueue(&sistema->estado_pronto[novo->prioridade], novo_pid);
+                    if (tipo_escalonamento == 1)
+                        enqueue(&sistema->fila_round_robin, novo_pid);
+                    else
+                        enqueue(&sistema->estado_pronto[novo->prioridade], novo_pid);
                     sistema->total_processos++;
-                    
+
                     printf("\n[G] Processo P%d criado a partir de %s\n", novo_pid, nome_programa);
                 }
                 break;
@@ -297,11 +337,10 @@ void executar_proxima_instrucao(Sistema *sistema) {
                         printf("\n[G] Limite de processos atingido.\n");
                         break;
                     }
-                    
+
                     int novo_pid = sistema->total_processos;
                     ProcessoSimulado *novo = &sistema->tabela[novo_pid];
-                    
-                    // Copia do processo atual
+
                     *novo = *proc;
                     novo->id = novo_pid;
                     novo->id_pai = pid;
@@ -310,21 +349,21 @@ void executar_proxima_instrucao(Sistema *sistema) {
                     novo->tempo_inicio = sistema->tempo;
                     novo->tempo_cpu = 0;
                     novo->tempo_bloqueio = 0;
-                    
-                    // Copia programa e memória
+
                     novo->programa = malloc(MAX_INSTRUCOES * sizeof(char*));
                     for (int i = 0; i < proc->tamanho_memoria; i++) {
                         novo->programa[i] = strdup(proc->programa[i]);
                     }
-                    
+
                     novo->memoria = malloc(100 * sizeof(int));
                     memcpy(novo->memoria, proc->memoria, 100 * sizeof(int));
-                    
-                    // Adiciona à fila de pronto
-                    enqueue(&sistema->estado_pronto[novo->prioridade], novo_pid);
+
+                    if (tipo_escalonamento == 1)
+                        enqueue(&sistema->fila_round_robin, novo_pid);
+                    else
+                        enqueue(&sistema->estado_pronto[novo->prioridade], novo_pid);
                     sistema->total_processos++;
-                    
-                    // Ajusta PC do processo pai
+
                     sistema->cpu.pc += n;
                 }
                 break;
@@ -334,43 +373,38 @@ void executar_proxima_instrucao(Sistema *sistema) {
                 if (sscanf(instrucao, "R %s", nome_arquivo) == 1) {
                     char caminho[256];
                     snprintf(caminho, sizeof(caminho), "programas/%s.txt", nome_arquivo);
-                    
+
                     printf("\n[G] Substituindo imagem do processo P%d com programa de %s\n", pid, caminho);
-                    
-                    // Libera programa antigo na CPU
+
                     for (int i = 0; i < proc->tamanho_memoria; i++) {
                         if (sistema->cpu.programa[i] != NULL) {
                             free(sistema->cpu.programa[i]);
                         }
                     }
                     free(sistema->cpu.programa);
-                    
-                    // Carrega novo programa na CPU
+
                     char **novo_programa;
                     int novo_tamanho;
-                    
+
                     if (!carregar_programa(caminho, &novo_programa, &novo_tamanho)) {
                         printf("\n[G] Falha ao carregar %s, processo continua com programa atual\n", caminho);
                         break;
                     }
-                    
-                    // Atualiza estrutura CPU com novo programa
+
                     sistema->cpu.programa = novo_programa;
                     sistema->cpu.pc = 0;
-                    
-                    // Libera e recria memória na CPU
+
                     if (sistema->cpu.memoria != NULL) {
                         free(sistema->cpu.memoria);
                     }
                     sistema->cpu.memoria = calloc(100, sizeof(int));
                     sistema->cpu.tamanho_memoria = 100;
-                    
-                    // Reflete essas mudanças no processo atual
+
                     proc->programa = novo_programa;
                     proc->pc = 0;
                     proc->memoria = sistema->cpu.memoria;
                     proc->tamanho_memoria = novo_tamanho;
-                    
+
                     printf("\n[G] Imagem do processo P%d substituída com sucesso\n", pid);
                 }
                 break;
@@ -380,23 +414,27 @@ void executar_proxima_instrucao(Sistema *sistema) {
                 break;
         }
 
-        // Avança PC e atualiza contadores
         sistema->cpu.pc++;
         proc->pc = sistema->cpu.pc;
         proc->tempo_cpu++;
         sistema->cpu.quantum_usado++;
-        
-        // Verifica quantum
-        int quantum_maximo = 1 << proc->prioridade;
+
+        int quantum_maximo = (tipo_escalonamento == 1) ? 2 : (1 << proc->prioridade);
         if (sistema->cpu.quantum_usado >= quantum_maximo) {
-            //printf("\n[G] Quantum expirado para P%d\n", pid);
             proc->estado = PRONTO;
-            if (proc->prioridade < MAX_PRIORIDADE - 1) {
-                proc->prioridade++;
+            if (tipo_escalonamento == 1)
+                enqueue(&sistema->fila_round_robin, pid);
+            else {
+                if (proc->prioridade < MAX_PRIORIDADE - 1) {
+                    proc->prioridade++;
+                }
+                enqueue(&sistema->estado_pronto[proc->prioridade], pid);
             }
-            enqueue(&sistema->estado_pronto[proc->prioridade], pid);
             sistema->cpu.processo_id = -1;
-            escalonar_proximo_processo(sistema);
+            if (tipo_escalonamento == 1)
+                escalonar_round_robin(sistema);
+            else
+                escalonar_proximo_processo(sistema);
         }
     }
 }
