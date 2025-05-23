@@ -2,6 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <semaphore.h>
 #include "sistema.h"
 
 // Variável global para tipo de escalonamento
@@ -84,26 +89,50 @@ const char* estado_str(Estado estado) {
 }
 
 void imprimir_estado(const Sistema *sistema) {
-    printf("\n[INFO] Estado atual do sistema\n");
-    printf("--------------------------------------------------\n");
-    printf("Tempo atual: %d\n", sistema->tempo);
-    printf("Total de processos ativos: %d\n\n", sistema->total_processos);
-    printf("ID  | Pai | Estado     | Prioridade | PC  | CPU\n");
-    printf("----|-----|------------|------------|-----|-----\n");
-
-    for (int i = 0; i < sistema->total_processos; i++) {
-        const ProcessoSimulado *p = &sistema->tabela[i];
-
-        printf("P%-3d| %-4d| %-11s| %-10d| %-3d | %-3d\n",
-               p->id,
-               p->id_pai,
-               estado_str(p->estado),
-               p->prioridade,
-               p->pc,
-               p->tempo_cpu);
+    sem_t *sem = sem_open("/sem_impressao", O_CREAT, 0644, 1);
+    if (sem == SEM_FAILED) {
+        perror("sem_open");
+        return;
     }
 
-    printf("--------------------------------------------------\n");
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Processo filho: impressão protegida
+        sem_wait(sem);
+
+        printf("\n[INFO] Estado atual do sistema\n");
+        printf("--------------------------------------------------\n");
+        printf("Tempo atual: %d\n", sistema->tempo);
+        printf("Total de processos ativos: %d\n\n", sistema->total_processos);
+        printf("ID  | Pai | Estado     | Prioridade | PC  | CPU\n");
+        printf("----|-----|------------|------------|-----|-----\n");
+
+        for (int i = 0; i < sistema->total_processos; i++) {
+            const ProcessoSimulado *p = &sistema->tabela[i];
+
+            printf("P%-3d| %-4d| %-11s| %-10d| %-3d | %-3d\n",
+                   p->id,
+                   p->id_pai,
+                   estado_str(p->estado),
+                   p->prioridade,
+                   p->pc,
+                   p->tempo_cpu);
+        }
+
+        printf("--------------------------------------------------\n");
+        fflush(stdout);
+
+        sem_post(sem);
+        sem_close(sem);
+        _exit(0);
+    } else if (pid > 0) {
+        // Processo pai: espera o filho terminar
+        waitpid(pid, NULL, 0);
+        sem_close(sem);
+    } else {
+        perror("fork");
+        sem_close(sem);
+    }
 }
 
 int carregar_programa(const char *nome_arquivo, char ***programa, int *tamanho) {
