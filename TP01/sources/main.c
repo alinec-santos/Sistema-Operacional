@@ -69,14 +69,34 @@ int main(int argc, char *argv[]) {
 
 void modo_interativo(int write_fd) {
     char buffer[128];
+    char espera;
+
     while (1) {
         printf("\n> Digite um comando (U, I, M): ");
         fflush(stdout);
-        if (fgets(buffer, sizeof(buffer), stdin) == NULL) break;
+        
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL)
+            break;
+
         write(write_fd, buffer, strlen(buffer));
-        if (buffer[0] == 'M') break;
+        
+        if (buffer[0] == 'M')
+            break;
+
+         usleep(300000); 
+        // Espera ENTER antes de mostrar o próximo prompt
+        printf("\n[Pressione ENTER para continuar]");
+        fflush(stdout);
+        espera = getchar(); // Espera o usuário apertar ENTER
+        while (espera != '\n') {
+            espera = getchar(); // Limpa buffer caso usuário digite qualquer coisa
+        }
+
+        // Limpa a tela do terminal (funciona em Unix/WSL)
+        system("clear");
     }
 }
+
 
 void modo_arquivo(int write_fd, const char *arquivo) {
     FILE *fp = fopen(arquivo, "r");
@@ -87,7 +107,7 @@ void modo_arquivo(int write_fd, const char *arquivo) {
 
     char linha[128];
     while (fgets(linha, sizeof(linha), fp)) {
-        printf("[Debug] Enviando comando: %s", linha); // Feedback visual
+        printf("\n[Debug] Enviando comando: %s", linha); // Feedback visual
         write(write_fd, linha, strlen(linha));
         usleep(50000); // Delay entre comandos (50ms)
         if (linha[0] == 'M') break;

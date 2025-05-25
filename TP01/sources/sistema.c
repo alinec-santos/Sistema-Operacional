@@ -9,6 +9,15 @@
 #include <semaphore.h>
 #include "sistema.h"
 
+// Cores ANSI
+#define ANSI_RESET       "\033[0m"
+#define ANSI_RED         "\033[1;31m"
+#define ANSI_GREEN       "\033[1;32m"
+#define ANSI_YELLOW      "\033[1;33m"
+#define ANSI_BLUE        "\033[1;34m"
+#define ANSI_MAGENTA     "\033[1;35m"
+#define ANSI_CYAN        "\033[1;36m"
+
 // Variável global para tipo de escalonamento
 extern int tipo_escalonamento;
 
@@ -63,7 +72,7 @@ void criar_processo_inicial(Sistema *sistema, const char *nome_arquivo) {
     p->tempo_cpu = 0;
 
     if (!carregar_programa(nome_arquivo, &p->programa, &p->tamanho_memoria)) {
-        fprintf(stderr, "Erro ao carregar o programa inicial.\n");
+        fprintf(stderr, ANSI_RED "Erro ao carregar o programa inicial.\n" ANSI_RESET);
         exit(EXIT_FAILURE);
     }
 
@@ -74,7 +83,7 @@ void criar_processo_inicial(Sistema *sistema, const char *nome_arquivo) {
 
     sistema->total_processos = 1;
 
-    printf("\n[G] Processo init (P0) criado com sucesso.\n");
+    printf(ANSI_GREEN "\n[G] Processo init (P0) criado com sucesso.\n" ANSI_RESET);
     fflush(stdout);
 }
 
@@ -100,7 +109,7 @@ void imprimir_estado(const Sistema *sistema) {
         // Processo filho: impressão protegida
         sem_wait(sem);
 
-        printf("\n[INFO] Estado atual do sistema\n");
+        printf(ANSI_CYAN "\n[INFO] Estado atual do sistema\n" ANSI_RESET);
         printf("--------------------------------------------------\n");
         printf("Tempo atual: %d\n", sistema->tempo);
         printf("Total de processos ativos: %d\n\n", sistema->total_processos);
@@ -138,7 +147,7 @@ void imprimir_estado(const Sistema *sistema) {
 int carregar_programa(const char *nome_arquivo, char ***programa, int *tamanho) {
     FILE *arquivo = fopen(nome_arquivo, "r");
     if (!arquivo) {
-        perror("Erro ao abrir o arquivo do programa");
+        perror(ANSI_RED "Erro ao abrir o arquivo do programa" ANSI_RESET);
         return 0;
     }
 
@@ -174,7 +183,7 @@ void escalonar_proximo_processo(Sistema *sistema) {
             sistema->cpu.prioridade = p->prioridade;
 
             p->estado = EXECUTANDO;
-            printf("\n[G] Processo P%d escalonado para execução\n", pid);
+            printf(ANSI_BLUE "\n[G] Processo P%d escalonado para execução\n" ANSI_RESET, pid);
             return;
         }
     }
@@ -203,7 +212,7 @@ void escalonar_round_robin(Sistema *sistema) {
         sistema->cpu.prioridade = p->prioridade;
 
         p->estado = EXECUTANDO;
-        printf("\n[G] (RR) Processo P%d escalonado para execução\n", pid);
+        printf(ANSI_BLUE "\n[G] (RR) Processo P%d escalonado para execução\n" ANSI_RESET, pid);
         return;
     }
     sistema->cpu.processo_id = -1;
@@ -223,7 +232,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                 enqueue(&sistema->fila_round_robin, pid);
             else
                 enqueue(&sistema->estado_pronto[p->prioridade], pid);
-            printf("\n[G] Processo P%d desbloqueado (tempo %d)\n", pid, sistema->tempo);
+            printf(ANSI_YELLOW "\n[G] Processo P%d desbloqueado (tempo %d)\n" ANSI_RESET, pid, sistema->tempo);
         } else {
             enqueue(&temp_fila, pid);
         }
@@ -243,19 +252,19 @@ void executar_proxima_instrucao(Sistema *sistema) {
 
     int pid = sistema->cpu.processo_id;
     if (pid == -1) {
-        printf("\n[G] Nenhum processo disponível para execução.\n");
+        printf(ANSI_CYAN "\n[G] Nenhum processo disponível para execução.\n" ANSI_RESET);
         return;
     }
 
     ProcessoSimulado *proc = &sistema->tabela[pid];
     if (proc->estado == TERMINADO) {
         sistema->cpu.processo_id = -1;
-        printf("\n[G] Tentativa de executar processo P%d já terminado\n", pid);
+        printf(ANSI_RED "\n[G] Tentativa de executar processo P%d já terminado\n" ANSI_RESET, pid);
         return;
     }
 
     char *instrucao = proc->programa[sistema->cpu.pc];
-    printf("\n[G] Executando instrução: %s (P%d)\n", instrucao, pid);
+    printf(ANSI_CYAN "\n[G] Executando instrução: %s(P%d)\n" ANSI_RESET, instrucao, pid);
 
     char tipo;
     int x, n;
@@ -276,7 +285,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
             case 'B': {
                 int tempo_bloqueio;
                 if (sscanf(instrucao, "B %d", &tempo_bloqueio) == 1) {
-                    printf("\n[G] Processo P%d bloqueado por %d unidades de tempo\n", pid, tempo_bloqueio);
+                    printf(ANSI_YELLOW "\n[G] Processo P%d bloqueado por %d unidades de tempo\n" ANSI_RESET, pid, tempo_bloqueio);
                     proc->estado = BLOQUEADO;
                     proc->tempo_bloqueio = sistema->tempo + tempo_bloqueio;
                     enqueue(&sistema->estado_bloqueado, pid);
@@ -291,7 +300,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                 break;
             }
             case 'T': {
-                printf("\n[G] Processo P%d terminado.\n", pid);
+                printf(ANSI_MAGENTA "\n[G] Processo P%d terminado.\n" ANSI_RESET, pid);
 
                 for (int i = 0; i < proc->tamanho_memoria; i++) {
                     free(proc->programa[i]);
@@ -310,7 +319,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                             enqueue(&sistema->fila_round_robin, proc->id_pai);
                         else
                             enqueue(&sistema->estado_pronto[pai->prioridade], proc->id_pai);
-                        printf("\n[G] Processo pai P%d movido para fila de prontos\n", proc->id_pai);
+                        printf(ANSI_GREEN "\n[G] Processo pai P%d movido para fila de prontos\n" ANSI_RESET, proc->id_pai);
                     }
                 }
 
@@ -327,7 +336,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                     snprintf(caminho, sizeof(caminho), "programas/%s.txt", nome_programa);
 
                     if (sistema->total_processos >= MAX_PROCESSOS) {
-                        printf("\n[G] Limite de processos atingido.\n");
+                        printf(ANSI_RED "\n[G] Limite de processos atingido.\n" ANSI_RESET);
                         break;
                     }
 
@@ -344,7 +353,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                     novo->tempo_bloqueio = 0;
 
                     if (!carregar_programa(caminho, &novo->programa, &novo->tamanho_memoria)) {
-                        printf("\n[G] Falha ao carregar o programa %s\n", caminho);
+                        printf(ANSI_RED "\n[G] Falha ao carregar o programa %s\n" ANSI_RESET, caminho);
                         break;
                     }
 
@@ -355,7 +364,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                         enqueue(&sistema->estado_pronto[novo->prioridade], novo_pid);
                     sistema->total_processos++;
 
-                    printf("\n[G] Processo P%d criado a partir de %s\n", novo_pid, nome_programa);
+                    printf(ANSI_GREEN "\n[G] Processo P%d criado a partir de %s\n" ANSI_RESET, novo_pid, nome_programa);
                 }
                 break;
             }
@@ -363,7 +372,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                 int n;
                 if (sscanf(instrucao, "F %d", &n) == 1) {
                     if (sistema->total_processos >= MAX_PROCESSOS) {
-                        printf("\n[G] Limite de processos atingido.\n");
+                        printf(ANSI_RED "\n[G] Limite de processos atingido.\n" ANSI_RESET);
                         break;
                     }
 
@@ -403,7 +412,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                     char caminho[256];
                     snprintf(caminho, sizeof(caminho), "programas/%s.txt", nome_arquivo);
 
-                    printf("\n[G] Substituindo imagem do processo P%d com programa de %s\n", pid, caminho);
+                    printf(ANSI_CYAN "\n[G] Substituindo imagem do processo P%d com programa de %s\n" ANSI_RESET, pid, caminho);
 
                     for (int i = 0; i < proc->tamanho_memoria; i++) {
                         if (sistema->cpu.programa[i] != NULL) {
@@ -416,7 +425,7 @@ void executar_proxima_instrucao(Sistema *sistema) {
                     int novo_tamanho;
 
                     if (!carregar_programa(caminho, &novo_programa, &novo_tamanho)) {
-                        printf("\n[G] Falha ao carregar %s, processo continua com programa atual\n", caminho);
+                        printf(ANSI_RED "\n[G] Falha ao carregar %s, processo continua com programa atual\n" ANSI_RESET, caminho);
                         break;
                     }
 
@@ -434,12 +443,12 @@ void executar_proxima_instrucao(Sistema *sistema) {
                     proc->memoria = sistema->cpu.memoria;
                     proc->tamanho_memoria = novo_tamanho;
 
-                    printf("\n[G] Imagem do processo P%d substituída com sucesso\n", pid);
+                    printf(ANSI_GREEN "\n[G] Imagem do processo P%d substituída com sucesso\n" ANSI_RESET, pid);
                 }
                 break;
             }
             default:
-                printf("\n[G] Instrução inválida: %s\n", instrucao);
+                printf(ANSI_RED "\n[G] Instrução inválida: %s\n" ANSI_RESET, instrucao);
                 break;
         }
 
