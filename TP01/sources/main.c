@@ -6,21 +6,19 @@
 #include <sys/wait.h>
 #include "gerenciador.h"
 
-
 int tipo_escalonamento = 0; // 0 - Prioridade, 1 - Round Robin
+
+void modo_interativo(int write_fd);
+void modo_arquivo(int write_fd, const char *arquivo);
 
 int main(int argc, char *argv[]) {
     int pipe_fd[2];
 
-    // Escolha do algoritmo de escalonamento
     printf("\n> Escolha o algoritmo de escalonamento\n< 1-Prioridade 2-Round Robin >: ");
     int escolha_algo;
     scanf("%d", &escolha_algo);
     getchar(); // consome \n
-    if (escolha_algo == 2)
-        tipo_escalonamento = 1;
-    else
-        tipo_escalonamento = 0;
+    tipo_escalonamento = (escolha_algo == 2) ? 1 : 0;
 
     if (pipe(pipe_fd) == -1) {
         perror("Erro ao criar pipe");
@@ -34,20 +32,18 @@ int main(int argc, char *argv[]) {
     }
 
     if (pid == 0) {
-        // Processo gerenciador de processos
+        // Processo gerenciador
         close(pipe_fd[1]); // fecha escrita
         dup2(pipe_fd[0], STDIN_FILENO); // redireciona leitura do pipe para STDIN
         close(pipe_fd[0]);
-
-        // Chama a função do gerenciador diretamente
         gerenciador();
-        exit(EXIT_FAILURE);
+        exit(EXIT_SUCCESS);
     } else {
-        // Processo controle
+        // Processo controlador
         close(pipe_fd[0]); // fecha leitura
 
         int escolha;
-        usleep(100000);
+        usleep(100000); // pequena espera para garantir sincronização
         printf("\n> Escolha modo de entrada\n< 1-Interativo 2-Arquivo >: ");
         scanf("%d", &escolha);
         getchar(); // consome \n
@@ -65,7 +61,7 @@ int main(int argc, char *argv[]) {
         }
 
         close(pipe_fd[1]);
-        wait(NULL); // espera o gerenciador terminar
+        wait(NULL); // aguarda processo filho
     }
 
     return 0;
@@ -88,10 +84,14 @@ void modo_arquivo(int write_fd, const char *arquivo) {
         perror("Erro ao abrir arquivo");
         return;
     }
+
     char linha[128];
     while (fgets(linha, sizeof(linha), fp)) {
+        printf("[Debug] Enviando comando: %s", linha); // Feedback visual
         write(write_fd, linha, strlen(linha));
+        usleep(50000); // Delay entre comandos (50ms)
         if (linha[0] == 'M') break;
     }
+
     fclose(fp);
 }
