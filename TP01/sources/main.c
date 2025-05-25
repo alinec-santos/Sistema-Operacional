@@ -13,7 +13,7 @@ void modo_arquivo(int write_fd, const char *arquivo);
 
 int main(int argc, char *argv[]) {
     int pipe_fd[2];
-
+    iniciar_monitorCPU();
     printf("\n> Escolha o algoritmo de escalonamento\n< 1-Prioridade 2-Round Robin >: ");
     int escolha_algo;
     scanf("%d", &escolha_algo);

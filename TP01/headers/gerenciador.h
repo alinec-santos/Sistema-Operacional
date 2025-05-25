@@ -3,5 +3,6 @@
 
 // Declaração da função gerenciador
 void gerenciador();
+void iniciar_monitorCPU(void);
 
 #endif
