@@ -12,7 +12,11 @@ TARGET_ORIG = simulador
 OBJ_THREADS = $(SRC)/main_threads.o $(SRC)/sistema_threads.o
 TARGET_THREADS = simulador_threads
 
-all: $(TARGET_ORIG) $(TARGET_THREADS)
+# Monitor de CPU
+MONITOR_SRC = $(SRC)/monitorCPU.c
+MONITOR_TARGET = monitorCPU
+
+all: $(TARGET_ORIG) $(TARGET_THREADS) $(MONITOR_TARGET)
 
 # =========================
 # Compilação versão original (processos)
@@ -41,9 +45,14 @@ $(TARGET_THREADS): $(OBJ_THREADS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 # =========================
+# Compilação do monitorCPU
+$(MONITOR_TARGET): $(MONITOR_SRC)
+	$(CC) $(CFLAGS) -o $@ $^
+
+# =========================
 # Limpeza
 clean:
-	rm -f $(SRC)/*.o $(TARGET_ORIG) $(TARGET_THREADS)
+	rm -f $(SRC)/*.o $(TARGET_ORIG) $(TARGET_THREADS) $(MONITOR_TARGET)
 
 # =========================
 # Execução
@@ -55,6 +64,10 @@ test-threads: $(TARGET_THREADS)
 	@echo "=== Executando simulador_threads (threads) ==="
 	./$(TARGET_THREADS)
 
+test-monitor: $(MONITOR_TARGET)
+	@echo "=== Executando monitorCPU ==="
+	./$(MONITOR_TARGET)
+
 # =========================
 # Ajuda
 help:
@@ -63,5 +76,6 @@ help:
 	@echo "  make clean      - Limpa os executáveis e objetos"
 	@echo "  make test-original - Roda ./simulador"
 	@echo "  make test-threads  - Roda ./simulador_threads"
+	@echo "  make test-monitor   - Roda ./monitorCPU"
 
-.PHONY: all clean test-original test-threads help
+.PHONY: all clean test-original test-threads test-monitor help
