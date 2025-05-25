@@ -1,0 +1,10 @@
+version: "3.8"
+
+services:
+  simulador:
+    build: .
+    container_name: tp01_simulador
+    volumes:
+      - .:/app
+    working_dir: /app
+    tty: true
