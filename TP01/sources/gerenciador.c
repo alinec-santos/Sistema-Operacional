@@ -2,7 +2,32 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gerenciador.h"
+#include <sys/types.h>
+#include <unistd.h>
 #include "../headers/sistema.h"
+
+void iniciar_monitorCPU(){
+    pid_t pid = fork();
+    if(pid == 0){
+        // Redireciona saída para arquivo
+        FILE *log = fopen("monitorCPU.log", "w");
+        if (log == NULL) {
+            perror("Erro ao abrir arquivo para monitorCPU");
+            _exit(1);
+        }
+        dup2(fileno(log), STDOUT_FILENO);
+        dup2(fileno(log), STDERR_FILENO);
+        fclose(log);
+
+        execl("./monitorCPU", "monitor_CPU", NULL);
+        perror("Erro ao executar monitorCPU");
+        _exit(1);
+    } else if (pid > 0){
+        printf("[GERENCIADOR] Monitor de CPU iniciado (PID %d)\n", pid);
+    } else {
+        perror("Erro ao criar processo do monitor de CPU");
+    }
+}
 
 void gerenciador() {
     Sistema sistema;
