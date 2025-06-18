@@ -3,8 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+static uint32_t next_inode_num = 0;
 
-Inode *inode_create(Disk *disk, uint32_t mode) {
+Inode *inode_create(uint32_t mode) {
     Inode *inode = malloc(sizeof(Inode));
     memset(inode, 0, sizeof(Inode));
     
@@ -27,4 +28,8 @@ Inode *inode_load(Disk *disk, uint32_t inode_num) {
     lseek(disk->fd, offset, SEEK_SET);
     read(disk->fd, inode, sizeof(Inode));
     return inode;
+}
+
+uint32_t inode_alloc() {
+    return next_inode_num++;
 }

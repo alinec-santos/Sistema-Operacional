@@ -19,10 +19,11 @@ typedef struct {
 } Inode;
 
 // Cria um novo i-node vazio
-Inode *inode_create(Disk *disk, uint32_t mode);
+Inode *inode_create(uint32_t mode);
 // Salva i-node no disco
 void inode_save(Disk *disk, uint32_t inode_num, Inode *inode);
 // Carrega i-node do disco
 Inode *inode_load(Disk *disk, uint32_t inode_num);
 
+uint32_t inode_alloc();
 #endif
