@@ -24,4 +24,10 @@ int dir_add_entry(Disk *disk, uint32_t dir_inode_num, uint32_t child_inode_num, 
 int file_create(Disk *disk, uint32_t parent_inode_num, const char *host_filename, const char *fs_filename);
 
 int file_read(Disk *disk, uint32_t inode_num);
+
+int dir_list_detailed(Disk *disk, uint32_t inode_num) ;
+
+int dir_list_dirs(Disk *disk, uint32_t inode_num);
+
+
 #endif

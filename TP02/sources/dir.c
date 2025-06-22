@@ -321,3 +321,98 @@ int dir_create_root(Disk *disk) {
 
     return 0;
 }
+
+int dir_list_detailed(Disk *disk, uint32_t inode_num) {
+    Inode *dir = inode_load(disk, inode_num);
+    if (!dir) {
+        printf("[ERRO] Não foi possível carregar inode %u\n", inode_num);
+        return -1;
+    }
+
+    if ((dir->mode & 040000) != 040000) {
+        printf("[ERRO] Inode %u não é um diretório.\n", inode_num);
+        free(dir);
+        return -1;
+    }
+
+    uint32_t num_entries = dir->size / DIR_ENTRY_SIZE;
+    printf("Conteúdo detalhado do diretório (inode %u):\n", inode_num);
+
+    for (uint32_t i = 0; i < num_entries; i++) {
+        uint32_t block_idx = (i * DIR_ENTRY_SIZE) / disk->block_size;
+        uint32_t offset_in_block = (i * DIR_ENTRY_SIZE) % disk->block_size;
+
+        if (block_idx >= 10 || dir->blocks[block_idx] == 0) {
+            printf("  [ERRO] Entrada %u: bloco não alocado ou inválido\n", i);
+            continue;
+        }
+
+        DirEntry entry;
+        lseek(disk->fd, dir->blocks[block_idx] * disk->block_size + offset_in_block, SEEK_SET);
+        ssize_t bytes_read = read(disk->fd, &entry, sizeof(DirEntry));
+
+        if (bytes_read != sizeof(DirEntry) || entry.name[0] == '\0') {
+            continue; // ignora entradas inválidas
+        }
+
+        Inode *entry_inode = inode_load(disk, entry.inode_num);
+        if (!entry_inode) {
+            printf("  [%u] %s - [ERRO ao carregar inode]\n", entry.inode_num, entry.name);
+            continue;
+        }
+
+        // Exibe informações
+        printf("  [%u] %-15s | Tamanho: %u bytes | Criado em: %s",
+               entry.inode_num,
+               entry.name,
+               entry_inode->size,
+               ctime(&entry_inode->created_at));
+
+        free(entry_inode);
+    }
+
+    free(dir);
+    return 0;
+}
+
+int dir_list_dirs(Disk *disk, uint32_t inode_num) {
+    Inode *dir = inode_load(disk, inode_num);
+    if (!dir) {
+        printf("[ERRO] Não foi possível carregar inode %u\n", inode_num);
+        return -1;
+    }
+
+    if ((dir->mode & 040000) != 040000) {
+        printf("[ERRO] Inode %u não é um diretório.\n", inode_num);
+        free(dir);
+        return -1;
+    }
+
+    uint32_t num_entries = dir->size / DIR_ENTRY_SIZE;
+    printf("Diretórios dentro do inode %u:\n", inode_num);
+
+    for (uint32_t i = 0; i < num_entries; i++) {
+        uint32_t block_idx = (i * DIR_ENTRY_SIZE) / disk->block_size;
+        uint32_t offset_in_block = (i * DIR_ENTRY_SIZE) % disk->block_size;
+
+        if (block_idx >= 10 || dir->blocks[block_idx] == 0)
+            continue;
+
+        DirEntry entry;
+        lseek(disk->fd, dir->blocks[block_idx] * disk->block_size + offset_in_block, SEEK_SET);
+        ssize_t bytes_read = read(disk->fd, &entry, sizeof(DirEntry));
+        if (bytes_read != sizeof(DirEntry)) continue;
+        if (entry.name[0] == '\0') continue;
+
+        Inode *entry_inode = inode_load(disk, entry.inode_num);
+        if (!entry_inode) continue;
+
+        if ((entry_inode->mode & 040000) == 040000) {  // É diretório
+            printf("  [%u] %s\n", entry.inode_num, entry.name);
+        }
+
+        free(entry_inode);
+    }
+    free(dir);
+    return 0;
+}
