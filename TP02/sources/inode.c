@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-static uint32_t next_inode_num = 0;
+static uint32_t next_inode_num = 1;
+
 
 Inode *inode_create(uint32_t mode) {
     Inode *inode = malloc(sizeof(Inode));
@@ -32,4 +33,8 @@ Inode *inode_load(Disk *disk, uint32_t inode_num) {
 
 uint32_t inode_alloc() {
     return next_inode_num++;
+}
+
+void inode_reset_counter() {
+    next_inode_num = 0;
 }

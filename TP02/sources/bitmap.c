@@ -25,12 +25,19 @@ void bitmap_set(Disk *disk, uint32_t block_num, int used) {
     uint8_t bit_mask = 1 << (block_num % 8);
     uint8_t byte;
 
-    lseek(disk->fd, BITMAP_START_BLOCK * disk->block_size + byte_pos, SEEK_SET);
+    // Lê o byte atual do bitmap no disco
+    lseek(disk->fd, disk->block_size + byte_pos, SEEK_SET); // Corrigido: Começa no bloco 1 (bitmap)
     read(disk->fd, &byte, 1);
-    
-    byte = used ? (byte | bit_mask) : (byte & ~bit_mask);
-    
-    lseek(disk->fd, byte_pos, SEEK_SET);
+
+    // Modifica o bit correspondente
+    if (used) {
+        byte |= bit_mask;
+    } else {
+        byte &= ~bit_mask;
+    }
+
+    // Escreve o byte de volta no disco
+    lseek(disk->fd, disk->block_size + byte_pos, SEEK_SET);
     write(disk->fd, &byte, 1);
 }
 
@@ -39,7 +46,8 @@ int bitmap_get(Disk *disk, uint32_t block_num) {
     uint8_t bit_mask = 1 << (block_num % 8);
     uint8_t byte;
 
-    lseek(disk->fd, byte_pos, SEEK_SET);
+    // CORREÇÃO: Precisa ler do bloco 1 (bitmap), não da posição 0
+    lseek(disk->fd, disk->block_size + byte_pos, SEEK_SET);
     read(disk->fd, &byte, 1);
     return (byte & bit_mask) ? 1 : 0;
 }

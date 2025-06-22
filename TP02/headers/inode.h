@@ -26,4 +26,6 @@ void inode_save(Disk *disk, uint32_t inode_num, Inode *inode);
 Inode *inode_load(Disk *disk, uint32_t inode_num);
 
 uint32_t inode_alloc();
+
+void inode_reset_counter();
 #endif
