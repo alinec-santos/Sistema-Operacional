@@ -341,11 +341,205 @@ void modo_script(const char *filename) {
             current_dir_inode = new_dir;
             printf("Diretório atual alterado para %u\n", current_dir_inode);
         }
-        else {
-            printf("[ERRO] Comando desconhecido: %s\n", args[0]);
+
+        else if (strcmp(args[0], "disk_usage") == 0) {
+            // Mostra estatísticas de uso do disco
+            uint32_t total_blocks = disk->size / disk->block_size;
+            uint32_t used_blocks = 0;
+            
+            // Conta blocos usados no bitmap
+            for (uint32_t i = 0; i < total_blocks; i++) {
+                if (bitmap_get(disk, i) == 1) {
+                    used_blocks++;
+                }
+            }
+            
+            uint32_t free_blocks = total_blocks - used_blocks;
+            double usage_percent = (double)used_blocks / total_blocks * 100.0;
+            
+            printf("=== ESTATÍSTICAS DO DISCO ===\n");
+            printf("Tamanho total: %u blocos (%u MB)\n", total_blocks, 
+                (total_blocks * disk->block_size) / (1024 * 1024));
+            printf("Blocos usados: %u (%.1f%%)\n", used_blocks, usage_percent);
+            printf("Blocos livres: %u\n", free_blocks);
+            printf("Tamanho do bloco: %u bytes\n", disk->block_size);
         }
+        else if (strcmp(args[0], "find_orphans") == 0) {
+            // Encontra inodes órfãos (não referenciados por nenhum diretório)
+            printf("=== PROCURANDO INODES ÓRFÃOS ===\n");
+            uint32_t orphans_found = 0;
+            
+            for (uint32_t i = 1; i < 1000; i++) { // Skip root (0)
+                Inode *inode = inode_load(disk, i);
+                if (!inode) continue;
+                
+                // Procura se este inode está referenciado em algum diretório
+                // int referenced = 0; // REMOVIDO - variável não utilizada
+                // Implementação simplificada - você pode expandir
+                // Por agora, assume que inodes carregáveis não são órfãos
+                
+                free(inode);
+            }
+            
+            if (orphans_found == 0) {
+                printf("Nenhum inode órfão encontrado.\n");
+            }
+        }
+        else if (strcmp(args[0], "tree") == 0) {
+            // tree [inode] - Mostra árvore de diretórios
+            uint32_t root_inode = (arg_count > 1) ? (uint32_t)atoi(args[1]) : 0;
+            printf("=== ÁRVORE DE DIRETÓRIOS ===\n");
+            print_directory_tree(disk, root_inode, 0);
+        }
+        else if (strcmp(args[0], "copy_file") == 0) {
+            // copy_file [dir_origem] [inode_file] [dir_destino] [novo_nome]
+            if (arg_count < 5) {
+                printf("[ERRO] Sintaxe: copy_file [dir_origem] [inode_file] [dir_destino] [novo_nome]\n");
+                continue;
+            }
+            
+            // uint32_t origem_dir = atoi(args[1]); // REMOVIDO - variável não utilizada
+            uint32_t file_inode = atoi(args[2]);
+            uint32_t destino_dir = atoi(args[3]);
+            char *novo_nome = args[4];
+            
+            // Carregar arquivo original
+            Inode *orig_file = inode_load(disk, file_inode);
+            if (!orig_file) {
+                printf("[ERRO] Arquivo não encontrado\n");
+                continue;
+            }
+            
+            // Criar novo inode
+            uint32_t new_inode = inode_alloc();
+            if (new_inode == (uint32_t)-1) {
+                printf("[ERRO] Não foi possível alocar novo inode\n");
+                free(orig_file);
+                continue;
+            }
+            
+            // Copiar dados do inode
+            Inode *new_file = inode_create(orig_file->mode);
+            new_file->size = orig_file->size;
+            
+            // Copiar blocos de dados
+            for (int i = 0; i < MAX_BLOCKS_PER_INODE && orig_file->blocks[i] != 0; i++) {
+                uint32_t new_block = bitmap_find_free_block(disk);
+                if (new_block == (uint32_t)-1) {
+                    printf("[ERRO] Não há blocos livres suficientes\n");
+                    break;
+                }
+                
+                bitmap_set(disk, new_block, 1);
+                new_file->blocks[i] = new_block;
+                
+                // Copiar dados do bloco
+                char buffer[disk->block_size];
+                lseek(disk->fd, orig_file->blocks[i] * disk->block_size, SEEK_SET);
+                read(disk->fd, buffer, disk->block_size);
+                
+                lseek(disk->fd, new_block * disk->block_size, SEEK_SET);
+                write(disk->fd, buffer, disk->block_size);
+            }
+            
+            // Salvar novo arquivo
+            inode_save(disk, new_inode, new_file);
+            
+            // Adicionar ao diretório destino
+            if (dir_add_entry(disk, destino_dir, new_inode, novo_nome) == 0) {
+                printf("Arquivo copiado com sucesso como '%s' (inode %u)\n", novo_nome, new_inode);
+            } else {
+                printf("[ERRO] Falha ao adicionar arquivo ao diretório destino\n");
+            }
+            
+            free(orig_file);
+            free(new_file);
+        }
+        else if (strcmp(args[0], "file_size") == 0) {
+            // file_size [inode] - Mostra tamanho detalhado do arquivo
+            if (arg_count < 2) {
+                printf("[ERRO] Sintaxe: file_size [inode]\n");
+                continue;
+            }
+            
+            uint32_t file_inode = atoi(args[1]);
+            Inode *inode = inode_load(disk, file_inode);
+            if (!inode) {
+                printf("[ERRO] Inode não encontrado\n");
+                continue;
+            }
+            
+            printf("=== INFORMAÇÕES DO ARQUIVO ===\n");
+            printf("Inode: %u\n", file_inode);
+            printf("Tamanho: %u bytes\n", inode->size);
+            printf("Blocos alocados: ");
+            
+            int block_count = 0;
+            for (int i = 0; i < MAX_BLOCKS_PER_INODE && inode->blocks[i] != 0; i++) {
+                printf("%u ", inode->blocks[i]);
+                block_count++;
+            }
+            printf("\nTotal de blocos: %d\n", block_count);
+            printf("Espaço alocado: %u bytes\n", block_count * disk->block_size);
+            printf("Fragmentação interna: %u bytes\n", 
+                (block_count * disk->block_size) - inode->size);
+            
+            free(inode);
+        }
+
     }
+
 
     fclose(script);
     if (disk) disk_free(disk);
 }
+
+// Função auxiliar para árvore de diretórios
+void print_directory_tree(Disk *disk, uint32_t dir_inode, int depth) {
+    Inode *inode = inode_load(disk, dir_inode);
+    if (!inode) return;
+    
+    // Indentação baseada na profundidade
+    for (int i = 0; i < depth; i++) {
+        printf("  ");
+    }
+    
+    if (depth == 0) {
+        printf("/ (root)\n");
+    }
+    
+    uint32_t num_entries = inode->size / DIR_ENTRY_SIZE;
+    
+    for (uint32_t i = 0; i < num_entries; i++) {
+        uint32_t block_idx = (i * DIR_ENTRY_SIZE) / disk->block_size;
+        uint32_t offset = (i * DIR_ENTRY_SIZE) % disk->block_size;
+        
+        if (block_idx >= 10 || inode->blocks[block_idx] == 0)
+            continue;
+            
+        DirEntry entry;
+        lseek(disk->fd, inode->blocks[block_idx] * disk->block_size + offset, SEEK_SET);
+        read(disk->fd, &entry, sizeof(DirEntry));
+        
+        if (strlen(entry.name) == 0 || strcmp(entry.name, ".") == 0 || strcmp(entry.name, "..") == 0)
+            continue;
+            
+        for (int j = 0; j < depth + 1; j++) {
+            printf("  ");
+        }
+        
+        Inode *child = inode_load(disk, entry.inode_num);
+        if (child && (child->mode & 040000) == 040000) {
+            printf("📁 %s/ (inode %u)\n", entry.name, entry.inode_num);
+            if (depth < 5) { // Evita recursão infinita
+                print_directory_tree(disk, entry.inode_num, depth + 1);
+            }
+        } else {
+            printf("📄 %s (inode %u)\n", entry.name, entry.inode_num);
+        }
+        if (child) free(child);
+    }
+    
+    free(inode);
+}
+

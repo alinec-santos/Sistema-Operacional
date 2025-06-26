@@ -20,3 +20,5 @@ delete_file 2 5
 list_dir 1
 info 0
 info 1
+disk_usage
+tree 0
