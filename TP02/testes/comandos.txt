@@ -1,0 +1,22 @@
+512
+list_dir 0
+info 0
+create_dir 0 documentos
+create_dir 0 musicas
+list_dir 0
+create_file 0 /home/aline/teste.txt teste.txt
+cd 1
+list_dir
+create_dir 1 trabalhos
+create_file 1 /home/aline/teste2.txt teste2.txt
+info 1
+rename_file 1 5 trabalho_final.txt
+rename_dir 1 4 projetos
+read_file 3
+move_file 1 5 2
+list_dir 0
+list_dir 2
+delete_file 2 5
+list_dir 1
+info 0
+info 1

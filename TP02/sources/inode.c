@@ -1,10 +1,14 @@
 #include "inode.h"
 #include "superblock.h"
+#include "disk.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdio.h>
 static uint32_t next_inode_num = 1;
 
+
+extern Disk *disk;
 
 Inode *inode_create(uint32_t mode) {
     Inode *inode = malloc(sizeof(Inode));
@@ -37,4 +41,9 @@ uint32_t inode_alloc() {
 
 void inode_reset_counter() {
     next_inode_num = 0;
+}
+
+void inode_free(Disk *disk, uint32_t inode_num) {
+    bitmap_set(disk, inode_num, 0);
+    printf("[INFO] inode %u liberado\n", inode_num);
 }

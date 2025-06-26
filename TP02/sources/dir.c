@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#define MAX_BLOCKS_PER_INODE 10
 
 int dir_create(Disk *disk, uint32_t parent_inode_num, const char *name) {
     // 1. Aloca um novo i-node para o diretório
@@ -123,7 +124,7 @@ int dir_list(Disk *disk, uint32_t inode_num) {
     }
 
     uint32_t num_entries = dir->size / DIR_ENTRY_SIZE;
-    printf("Conteúdo do diretório (inode %u):\n", inode_num);
+    //printf("Conteúdo do diretório (inode %u):\n", inode_num);
     
     if (num_entries == 0) {
         printf("  (vazio)\n");
@@ -152,10 +153,10 @@ int dir_list(Disk *disk, uint32_t inode_num) {
             printf("  [ERRO] Entrada %u: falha na leitura (%zd bytes lidos)\n", i, bytes_read);
             continue;
         }
-
+        
         // Verifica se a entrada é válida
         if (entry.name[0] == '\0') {
-            printf("  [ERRO] Entrada %u: nome vazio\n", i);
+            //printf("  [ERRO] Entrada %u: nome vazio\n", i);
         } else if (entry.name[0] < 32 || entry.name[0] > 126) {
             printf("  [ERRO] Entrada %u: nome corrompido (primeiro char: %d)\n", i, entry.name[0]);
         } else {
@@ -276,52 +277,6 @@ int file_read(Disk *disk, uint32_t inode_num) {
     return 0;
 }
 
-int dir_create_root(Disk *disk) {
-    // Aloca inode 0
-    uint32_t inode_num = inode_alloc();
-    if (inode_num != 0) {
-        printf("[ERRO] Root precisa ser o inode 0!\n");
-        return -1;
-    }
-
-    Inode *root_inode = inode_create(040755);  // Modo diretório
-    uint32_t block_num = bitmap_find_free_block(disk);
-    if (block_num == (uint32_t)-1) {
-        printf("[ERRO] Sem blocos livres para root!\n");
-        free(root_inode);
-        return -1;
-    }
-
-    bitmap_set(disk, block_num, 1);
-    root_inode->blocks[0] = block_num;
-    root_inode->size = 2 * DIR_ENTRY_SIZE;
-
-    // Cria "." e ".." com inicialização adequada
-    DirEntry entries[2];
-    memset(entries, 0, sizeof(entries));
-    
-    entries[0].inode_num = 0;
-    strncpy(entries[0].name, ".", MAX_NAME_LEN - 1);
-    entries[0].name[MAX_NAME_LEN - 1] = '\0';
-    
-    entries[1].inode_num = 0;
-    strncpy(entries[1].name, "..", MAX_NAME_LEN - 1);
-    entries[1].name[MAX_NAME_LEN - 1] = '\0';
-
-    lseek(disk->fd, block_num * disk->block_size, SEEK_SET);
-    if (write(disk->fd, entries, sizeof(entries)) != sizeof(entries)) {
-        printf("[ERRO] Falha ao escrever entradas do diretório root\n");
-        bitmap_set(disk, block_num, 0);
-        free(root_inode);
-        return -1;
-    }
-
-    inode_save(disk, inode_num, root_inode);
-    free(root_inode);
-
-    return 0;
-}
-
 int dir_list_detailed(Disk *disk, uint32_t inode_num) {
     Inode *dir = inode_load(disk, inode_num);
     if (!dir) {
@@ -414,5 +369,219 @@ int dir_list_dirs(Disk *disk, uint32_t inode_num) {
         free(entry_inode);
     }
     free(dir);
+    return 0;
+}
+
+uint32_t navegar_diretorios(Disk *disk, uint32_t starting_inode) {
+    uint32_t current_inode = starting_inode;
+    char resposta[10];
+
+    while (1) {
+        printf("\n--- Conteúdo do diretório (inode %u) ---\n", current_inode);
+        dir_list(disk, current_inode);
+
+        printf("\nDeseja entrar em algum subdiretório? (s/n): ");
+        fgets(resposta, sizeof(resposta), stdin);
+
+        if (resposta[0] != 's' && resposta[0] != 'S') {
+            return current_inode; // usuário quer ficar nesse diretório
+        }
+
+        printf("Digite o inode do subdiretório: ");
+        uint32_t proximo_inode;
+        if (scanf("%u", &proximo_inode) != 1) {
+            printf("[ERRO] Entrada inválida. Tente novamente.\n");
+            while (getchar() != '\n');
+            continue;
+        }
+        getchar(); // limpar '\n'
+
+        Inode *inode = inode_load(disk, proximo_inode);
+        if (!inode || (inode->mode & 040000) != 040000) {
+            printf("[ERRO] O inode %u não é um diretório válido.\n", proximo_inode);
+            if (inode) free(inode);
+            continue;
+        }
+
+        free(inode);
+        current_inode = proximo_inode; // navega para o próximo diretório
+    }
+}
+
+int dir_rename_entry(Disk *disk, uint32_t parent_inode_num, uint32_t child_inode_num, const char *novo_nome) {
+    Inode *parent_inode = inode_load(disk, parent_inode_num);
+    if (!parent_inode) return -1;
+
+    if ((parent_inode->mode & 040000) != 040000) {
+        printf("[ERRO] Inode %u não é um diretório.\n", parent_inode_num);
+        free(parent_inode);
+        return -1;
+    }
+
+    uint32_t num_entries = parent_inode->size / DIR_ENTRY_SIZE;
+
+    for (uint32_t i = 0; i < num_entries; i++) {
+        uint32_t block_idx = (i * DIR_ENTRY_SIZE) / disk->block_size;
+        uint32_t offset_in_block = (i * DIR_ENTRY_SIZE) % disk->block_size;
+
+        if (block_idx >= 10 || parent_inode->blocks[block_idx] == 0)
+            continue;
+
+        DirEntry entry;
+        lseek(disk->fd, parent_inode->blocks[block_idx] * disk->block_size + offset_in_block, SEEK_SET);
+        ssize_t bytes_read = read(disk->fd, &entry, sizeof(DirEntry));
+        if (bytes_read != sizeof(DirEntry)) continue;
+
+        if (entry.inode_num == child_inode_num) {
+            // Renomear
+            strncpy(entry.name, novo_nome, MAX_NAME_LEN - 1);
+            entry.name[MAX_NAME_LEN - 1] = '\0';
+
+            lseek(disk->fd, parent_inode->blocks[block_idx] * disk->block_size + offset_in_block, SEEK_SET);
+            if (write(disk->fd, &entry, sizeof(DirEntry)) != sizeof(DirEntry)) {
+                printf("[ERRO] Falha ao escrever a entrada renomeada.\n");
+                free(parent_inode);
+                return -1;
+            }
+
+            free(parent_inode);
+            return 0;  // sucesso
+        }
+    }
+
+    free(parent_inode);
+    printf("[ERRO] Entrada com inode %u não encontrada no diretório %u.\n", child_inode_num, parent_inode_num);
+    return -1;
+}
+
+int dir_remove_entry(Disk *disk, uint32_t dir_inode_num, uint32_t target_inode_num) {
+    Inode *dir_inode = inode_load(disk, dir_inode_num);
+    if (!dir_inode) return -1;
+
+    if ((dir_inode->mode & 040000) != 040000) {
+        free(dir_inode);
+        return -1;
+    }
+
+    uint32_t num_entries = dir_inode->size / DIR_ENTRY_SIZE;
+    int found = 0;
+
+    for (uint32_t i = 0; i < num_entries; i++) {
+        uint32_t block_idx = (i * DIR_ENTRY_SIZE) / disk->block_size;
+        uint32_t offset_in_block = (i * DIR_ENTRY_SIZE) % disk->block_size;
+
+        if (block_idx >= MAX_BLOCKS_PER_INODE || dir_inode->blocks[block_idx] == 0)
+            continue;
+
+        DirEntry entry;
+        lseek(disk->fd, dir_inode->blocks[block_idx] * disk->block_size + offset_in_block, SEEK_SET);
+        ssize_t bytes_read = read(disk->fd, &entry, sizeof(DirEntry));
+        if (bytes_read != sizeof(DirEntry)) continue;
+
+        if (entry.inode_num == target_inode_num) {
+            // Para "remover", vamos zerar o nome para invalidar a entrada
+            memset(&entry.name, 0, sizeof(entry.name));
+            entry.inode_num = 0;
+
+            lseek(disk->fd, dir_inode->blocks[block_idx] * disk->block_size + offset_in_block, SEEK_SET);
+            if (write(disk->fd, &entry, sizeof(DirEntry)) != sizeof(DirEntry)) {
+                free(dir_inode);
+                return -1;
+            }
+            found = 1;
+            break;
+        }
+    }
+
+    free(dir_inode);
+
+    if (!found) return -1;
+
+    return 0;
+}
+
+uint32_t dir_find_parent_recursive(Disk *disk, uint32_t current_inode_num, uint32_t target_inode_num) {
+    Inode *current_inode = inode_load(disk, current_inode_num);
+    if (!current_inode) return (uint32_t)-1;
+
+    if ((current_inode->mode & 040000) != 040000) { // Se não for diretório, libera e retorna
+        free(current_inode);
+        return (uint32_t)-1;
+    }
+
+    uint32_t num_entries = current_inode->size / DIR_ENTRY_SIZE;
+
+    for (uint32_t i = 0; i < num_entries; i++) {
+        uint32_t block_idx = (i * DIR_ENTRY_SIZE) / disk->block_size;
+        uint32_t offset_in_block = (i * DIR_ENTRY_SIZE) % disk->block_size;
+
+        if (block_idx >= MAX_BLOCKS_PER_INODE || current_inode->blocks[block_idx] == 0)
+            continue;
+
+        DirEntry entry;
+        lseek(disk->fd, current_inode->blocks[block_idx] * disk->block_size + offset_in_block, SEEK_SET);
+        ssize_t bytes_read = read(disk->fd, &entry, sizeof(DirEntry));
+        if (bytes_read != sizeof(DirEntry)) continue;
+
+        // Ignorar "." e ".."
+        if (strcmp(entry.name, ".") == 0 || strcmp(entry.name, "..") == 0) continue;
+
+        if (entry.inode_num == target_inode_num) {
+            free(current_inode);
+            return current_inode_num; // Achei o pai
+        }
+
+        // Se for diretório, busca recursivamente dentro dele
+        Inode *entry_inode = inode_load(disk, entry.inode_num);
+        if (entry_inode && (entry_inode->mode & 040000) == 040000) {
+            uint32_t res = dir_find_parent_recursive(disk, entry.inode_num, target_inode_num);
+            free(entry_inode);
+            if (res != (uint32_t)-1) {
+                free(current_inode);
+                return res; // Pai encontrado recursivamente
+            }
+        } else {
+            if(entry_inode) free(entry_inode);
+        }
+    }
+
+    free(current_inode);
+    return (uint32_t)-1; // Não achou
+}
+
+uint32_t dir_find_parent(Disk *disk, uint32_t target_inode_num) {
+    // Começa pelo root (inode 0)
+    if (target_inode_num == 0) return (uint32_t)-1; // root não tem pai
+    return dir_find_parent_recursive(disk, 0, target_inode_num);
+}
+
+int file_delete(Disk *disk, uint32_t parent_inode_num, uint32_t file_inode_num) {
+    Inode *file_inode = inode_load(disk, file_inode_num);
+    if (!file_inode) return -1;
+
+    if ((file_inode->mode & 0100000) != 0100000) {
+        printf("[ERRO] Inode %u não é um arquivo regular.\n", file_inode_num);
+        free(file_inode);
+        return -1;
+    }
+
+    // Libera todos os blocos usados pelo arquivo
+    for (int i = 0; i < MAX_BLOCKS_PER_INODE; i++) {
+        if (file_inode->blocks[i] != 0 && file_inode->blocks[i] != (uint32_t)-1) {
+            bitmap_set(disk, file_inode->blocks[i], 0);
+        }
+    }
+
+    // Libera o inode
+    inode_free(disk, file_inode_num);
+
+    // Remove entrada do diretório pai
+    if (dir_remove_entry(disk, parent_inode_num, file_inode_num) != 0) {
+        printf("[ERRO] Falha ao remover a entrada do diretório pai.\n");
+        free(file_inode);
+        return -1;
+    }
+
+    free(file_inode);
     return 0;
 }

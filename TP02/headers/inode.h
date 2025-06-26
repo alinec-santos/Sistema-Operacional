@@ -3,7 +3,7 @@
 
 #include <time.h>
 #include "disk.h"
-
+#include "bitmap.h"
 #define INODE_SIZE 128          // Tamanho fixo de cada i-node
 #define DIRECT_BLOCKS 12        // Ponteiros diretos
 #define INDIRECT_BLOCKS 1       // Ponteiro indireto simples
@@ -28,4 +28,6 @@ Inode *inode_load(Disk *disk, uint32_t inode_num);
 uint32_t inode_alloc();
 
 void inode_reset_counter();
+
+void inode_free(Disk *disk, uint32_t inode_num);
 #endif
